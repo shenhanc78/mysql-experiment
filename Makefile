@@ -1,11 +1,14 @@
-CREATE_LLVM_PROF_CITC := clean
-
 DDIR := $(shell pwd)
-# LLVM_INSTALL_BIN = $(HOME)/i/llvm-main/bin
-LLVM_INSTALL_BIN = $(DDIR)/llvm/install/bin
+LLVM_INSTALL_BIN := $(DDIR)/llvm/install/bin
+
+# Google-only variables.
+CITC_WORKSPACE := clean
+# End of google-only variable.
 
 PATH  := $(LLVM_INSTALL_BIN):$(PATH)
 SHELL := env PATH=$(PATH) /bin/bash -eux -o pipefail
+PROCESSOR_NUMBER := $(shell cat /proc/cpuinfo | grep -E "^processor\s+:\s+[0-9]+$$" | wc -l)
+PARALLEL_LINK_JOBS := $(shell echo $$(( $(PROCESSOR_NUMBER) / 3)))
 
 MYSQL_PACKAGE_NAME := mysql-boost-8.0.29.tar.gz
 MYSQL_NAME := mysql-8.0.29
@@ -16,7 +19,6 @@ DBT2_SOURCE := $(DDIR)/$(DBT2_NAME)
 PROPELLER_INTRA_OPTS := --propeller_chain_split=true  --propeller_call_chain_clustering=true --propeller_chain_split_threshold=256
 PROPELLER_INTER_OPTS := --propeller_chain_split=true --propeller_forward_jump_distance=2048 --propeller_backward_jump_distance=1400 --propeller_call_chain_clustering=true --propeller_chain_split_threshold=256 --propeller_inter_function_ordering=true
 
-# removed temporarily
 common_compiler_flags := -DDBUG_OFF -O3 -DNDEBUG -Qunused-arguments -funique-internal-linkage-names
 common_linker_flags := -fuse-ld=lld -Wl,-z,keep-text-section-prefix -Wl,--build-id
 
@@ -66,12 +68,16 @@ llvm/install/bin/clang++: llvm/llvm-project/README.md
 	  -DLLVM_TARGETS_TO_BUILD="X86" \
 	  -DLLVM_BUILD_TESTS=Off \
 	  -DLLVM_INCLUDE_TESTS=Off \
-	  -DLLVM_PARALLEL_LINK_JOBS=48 ../llvm-project/llvm ; \
+	  -DLLVM_PARALLEL_LINK_JOBS="$(PARALLEL_LINK_JOBS)" ../llvm-project/llvm ; \
 	  ninja install
 
 create_llvm_prof:
-	@echo Please build create_llvm_prof and copy it to this directory
-	@exit 1
+	if [[ -e $(DDIR)/build_create_llvm_prof.sh ]]; then \
+		./build_create_llvm_prof.sh "$(CITC_WORKSPACE)" ; \
+	else \
+		echo Please build create_llvm_prof and copy it to this directory ; \
+		exit 1 ; \
+	fi
 
 packages/$(MYSQL_PACKAGE_NAME):
 	echo "Please download $(MYSQL_PACKAGE_NAME) manually and put it under $(DDIR)/packages."
@@ -148,34 +154,13 @@ pgolto_propeller_inter-mysql/install/bin/mysqld: \
 	pgoltol-mysql/inter_cc_profile.txt
 	$(call build_mysql,$(call gen_build_flags,-flto=thin -fbasic-block-sections=list=$(DDIR)/$(word 2,$^),-flto=thin -Wl$(COMMA)--lto-basic-block-sections=$(DDIR)/$(word 2,$^) -Wl$(COMMAN)--no-warn-symbol-ordering -Wl$(COMMA)--symbol-ordering-file=$(call to_ld_profile,$(DDIR)/$(word 2,$^))) -DFPROFILE_USE=1 -DFPROFILE_DIR="$(DDIR)/$<")
 
-# $(foreach f,vanillaq vanillal,$(f)-mysql/perf.data): %-mysql/perf.data: %-mysql/install/bin/mysqld %-mysql/setup
-# 	"$(DDIR)/loadtest-funcs.sh" start_mysqld $(VARIANT_DIR) ; \
-# 	"$(DDIR)/loadtest-funcs.sh" run_perf -o "$(DDIR)/$@" -- \
-# 	  "$(DDIR)/loadtest-funcs.sh" run_loadtest \
-# 	  "$(DBT2_SOURCE)" "$(VARIANT_DIR)/loadtest_output" 90 "$(VARIANT_DIR)/install/lib" \
-# 	|| { echo "*** loadtest failed ***" ; $(DDIR)/loadtest-funcs.sh stop_mysqld ; rm -f $(DDIR)/$@ ; exit 1; }
-# 	"$(DDIR)/loadtest-funcs.sh" stop_mysqld 
-
 $(foreach f,vanillaq vanillal pgoltoq pgoltol,$(f)-mysql/perf.data): %-mysql/perf.data: %-mysql/install/bin/mysqld %-mysql/setup
 	"$(DDIR)/loadtest-funcs.sh" run_perf -o "$(DDIR)/$@" -- \
 	  "$(DDIR)/loadtest-funcs.sh" run_sysbench_loadtest "$(VARIANT_DIR)" \
 	|| { echo "*** loadtest failed ***" ; rm -f $(DDIR)/$@ ; exit 1; }
 
-# Do not setup dbt2
-# start_mysqld "$(VARIANT_DIR)" ; \
-# echo "Loading datat into database ..." ; \
-# load_dbt2_data_and_procedure $(DBT2_SOURCE) $(VARIANT_DIR); \
-# stop_mysqld
-# ....: dbt2-tool/data/warehouse.data
 $(foreach f,$(FLAVORS),$(f)-mysql/setup): %-mysql/setup: %-mysql/install/bin/mysqld
 	$(DDIR)/loadtest-funcs.sh setup_mysql "$(VARIANT_DIR)" 2>&1 | tee $(DDIR)/$@
-
-# $(foreach f,$(FLAVORS),$(f)-mysql/benchmark): %-mysql/benchmark: dbt2-tool/data/warehouse.data %-mysql/install/bin/mysqld %-mysql/setup
-# 	source $(DDIR)/loadtest-funcs.sh ; \
-# 	start_mysqld "$(VARIANT_DIR)" ; \
-# 	{ set -o pipefail ; \
-#           if run_loadtest "$(DBT2_SOURCE)" "$(VARIANT_DIR)/loadtest_output" 120 $(VARIANT_DIR)/install/lib 2>&1 | tee $(DDIR)/$@ ; then move_file_with_version "$@"; fi ; } ; \
-# 	stop_mysqld
 
 $(foreach f,$(FLAVORS),$(f)-mysql/sysbench): %-mysql/sysbench: %-mysql/install/bin/mysqld %-mysql/setup
 	$(DDIR)/loadtest-funcs.sh run_sysbench_benchmark $(VARIANT_DIR) 5 && touch $(DDIR)/$@
