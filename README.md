@@ -24,19 +24,44 @@ This scripts can build the following mysql binaries:
 - pgolto_bolt - FDO and ThinLTO and bolt optimized binary
 - pgolto_propeller_int - FDO and ThinLTO and propeller optimized binary (internal only)
 
-## 3. Compare peformance
+## 3 Build flavors
+
+Use the following command to build a certain flavor:
+
+> make \<flavor\>
+
+For example:
+
+> make vanilla pgolto_bolt
+
+Will build 2 flavors of mysqld servers - vanilla and pgolto_bolt.
+
+## 4 Run sysbench for flavors
+
+Use the following command to run sysbench:
+
+> make \<flavor\>-mysql/sysbench
+
+For example
+
+> make pgolto_propeller-mysql/sysbench
+
+Will run sysbench for pgolto_propeller flavor.
+
+
+## 5. Compare peformance
 
 To compare performance:
 
-```make <A>-vs-<B>```
+> make \<A\>-vs-\<B\>
 
-```<A>``` and ```<B>``` are one of the above flavors. For example:
+\<A\> and \<B\> are one of the above flavors. For example:
 
 > make pgolto-vs-pgolto_propeller
 
 compares performance between binaries optimized with pgolto and pgolto+propeller
 
-## 4. Note
+## 6. **Note**
 
 For external uses (not in google corp network), please open Makefile,
 find the lines that define variable ```PROPELLER_INTRA_OPTS``` and
