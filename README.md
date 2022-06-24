@@ -40,7 +40,7 @@ compares performance between binaries optimized with pgolto and pgolto+propeller
 
 For external uses (not in google corp network), please open Makefile,
 find the lines that define variable ```PROPELLER_INTRA_OPTS``` and
-```PROPELLER_INTER_OPTS``` and set empty values to those two variable.
+```PROPELLER_INTER_OPTS``` and set empty values to those two variables.
 
 >PROPELLER_INTRA_OPTS :=
 >
