@@ -20,3 +20,5 @@ llvm-bolt
 perf2bolt
 t-test
 build_create_llvm_prof.sh
+.vscode/
+packages/mysql-boost-8.0.29.tar.gz

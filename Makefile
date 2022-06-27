@@ -213,6 +213,7 @@ t-test: t-test.cc llvm/install/bin/clang++
 
 clean:
 	rm -fr $(foreach f,$(FLAVORS),$(f)-mysql)
-	rm -f t-test llvm-bolt
+	rm -f t-test llvm-bolt perf2bolt
 	rm -fr llvm/build llvm/install llvm/*.log llvm/bolt-build
 	rm -fr $(DBT2_SOURCE) $(MYSQL_SOURCE)
+	rm -f create_llvm_prof
