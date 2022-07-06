@@ -22,3 +22,16 @@ t-test
 build_create_llvm_prof.sh
 .vscode/
 packages/mysql-boost-8.0.29.tar.gz
+baseline_create_llvm_prof
+baseline_fsafdo0-mysql/
+baseline_fsafdo-mysql/
+fsafdo0-mysql/
+fsafdo-mysql/
+fsafdo_mfs-mysql/
+spreadsheet.data
+data_to_spreadsheet
+spreadsheet.data
+spreadsheet.id
+spreadsheet
+report-size
+blaze-build
