@@ -3,13 +3,8 @@ LLVM_INSTALL_BIN := $(DDIR)/llvm/install/bin
 BASELINE_LLVM_INSTALL_BIN := $(DDIR)/llvm/install-baseline/bin
 
 # upstream repo is: https://github.com/llvm/llvm-project.git
-LLVM_REPO := sso://user/shenhan/llvm-working
-LLVM_BRANCH := google3_fsafdo_mfs
-LLVM_BASELINE_BRANCH := f951a6b2f37baf6ae832318fcca9ba4121c29529
-
-# Google-only variables.
-CITC_WORKSPACE := clean
-# End of google-only variable.
+LLVM_REPO := https://github.com/llvm/llvm-project.git
+LLVM_USE_GITHASH := 6db71b8f1418170324b49d20f1f7b3f7c5086066
 
 PATH  := $(LLVM_INSTALL_BIN):$(PATH)
 SHELL := env PATH=$(PATH) /bin/bash -eux -o pipefail
@@ -22,7 +17,7 @@ MYSQL_SOURCE := $(DDIR)/$(MYSQL_NAME)
 DBT2_NAME := dbt2-0.37.50.16
 DBT2_SOURCE := $(DDIR)/$(DBT2_NAME)
 
-PROPELLER_INTRA_OPTS := --propeller_chain_split=true  --propeller_call_chain_clustering=true --propeller_chain_split_threshold=256
+PROPELLER_INTRA_OPTS := --propeller_chain_split=true  --propeller_call_chain_clustering=true
 PROPELLER_INTER_OPTS := --propeller_chain_split=true --propeller_forward_jump_distance=2048 --propeller_backward_jump_distance=1400 --propeller_call_chain_clustering=true --propeller_chain_split_threshold=256 --propeller_inter_function_ordering=true
 
 # For fsafdo bootstrap
@@ -55,6 +50,7 @@ define build_mysql
 	export PATH="$(1):$$PATH" ; \
 	cd $(VARIANT_DIR)/build && cmake -G Ninja \
 		-DWITH_BOOST=$(MYSQL_SOURCE)/boost/boost_1_77_0 \
+		-DWITH_SSL=$(DDIR)/openssl_1_1_1-stable \
                 -DCMAKE_INSTALL_PREFIX=$(VARIANT_DIR)/install \
                 -DCMAKE_LINKER="lld" \
                 -DCMAKE_BUILD_TYPE=Release \
@@ -74,42 +70,41 @@ endef
 llvm/llvm-project/README.md:
 	mkdir -p llvm ; cd llvm ; git clone $(LLVM_REPO) llvm-project; \
 	  cd llvm-project ; \
-	  git branch --track "$(LLVM_BRANCH)" "origin/$(LLVM_BRANCH)" ; \
-	  git checkout "$(LLVM_BRANCH)"
+	  git checkout "$(LLVM_USE_GITHASH)"
 
-llvm/llvm-project-baseline/README.md: llvm/llvm-project/README.md
-	cd llvm; \
-	git clone --local --reference $(DDIR)/llvm/llvm-project \
-	  $(DDIR)/llvm/llvm-project llvm-project-baseline
-	cd llvm/llvm-project-baseline ; git checkout "$(LLVM_BASELINE_BRANCH)"
-
-llvm/install/bin/clang++ llvm/install-baseline/bin/clang++: llvm/install%/bin/clang++: llvm/llvm-project%/README.md
-	mkdir -p llvm/build$* llvm/install$*
-	cd llvm/build$*; \
-	export PATH=/usr/bin:$PATH; cmake -G Ninja -DCMAKE_BUILD_TYPE=Release \
-	  -DCMAKE_INSTALL_PREFIX=$(DDIR)/llvm/install$* \
+llvm/install/bin/clang++: llvm/llvm-project/README.md
+	mkdir -p llvm/build llvm/install
+	cd llvm/build; \
+	cmake -G Ninja -DCMAKE_BUILD_TYPE=Release \
+	  -DCMAKE_INSTALL_PREFIX=$(DDIR)/llvm/install \
+	  -DCMAKE_C_COMPILER=clang \
+	  -DCMAKE_CXX_COMPILER=clang++ \
+	  -DCMAKE_ASM_COMPILER=clang \
 	  -DLLVM_ENABLE_PROJECTS="compiler-rt;clang;llvm;lld;bolt" \
 	  -DLLVM_OPTIMIZED_TABLEGEN=On \
 	  -DLLVM_ENABLE_RTTI=On \
 	  -DLLVM_TARGETS_TO_BUILD="X86" \
 	  -DLLVM_BUILD_TESTS=Off \
 	  -DLLVM_INCLUDE_TESTS=Off \
-	  -DLLVM_PARALLEL_LINK_JOBS="$(PARALLEL_LINK_JOBS)" ../llvm-project$*/llvm ; \
+	  -DLLVM_PARALLEL_LINK_JOBS="$(PARALLEL_LINK_JOBS)" ../llvm-project/llvm ; \
 	  ninja install
 
-create_llvm_prof:
-	if [[ -e $(DDIR)/build_create_llvm_prof.sh ]]; then \
-		./build_create_llvm_prof.sh "$(CITC_WORKSPACE)" ; \
-	else \
-		echo Please build create_llvm_prof and copy it to this directory ; \
-		exit 1 ; \
-	fi
+create_llvm_prof: llvm/install/bin/clang++
+	./build_create_llvm_prof.sh "$(DDIR)/llvm/install"
 
 packages/$(MYSQL_PACKAGE_NAME):
 	echo "Please download $(MYSQL_PACKAGE_NAME) manually and put it under $(DDIR)/packages."
 	exit 1
 
-$(MYSQL_NAME)/README: packages/mysql-boost-8.0.29.tar.gz packages/mysql.patch
+openssl_1_1_1-stable/.installed:
+	git clone https://github.com/openssl/openssl.git openssl.git
+	cd openssl.git ; \
+	git checkout OpenSSL_1_1_1-stable ; \
+	./config --prefix="$(DDIR)/$(shell dirname $@)" "--openssldir=$(DDIR)/$(shell dirname $@)/ssl" ; \
+	make -j50 ; make -j50 install
+	touch $@
+
+$(MYSQL_NAME)/README: packages/${MYSQL_PACKAGE_NAME) packages/mysql.patch openssl_1_1_1-stable/.installed
 	tar xzvf $<
 	cd "$(VARIANT_DIR)" ; patch -p1 < "$(DDIR)/$(lastword $^)"
 	touch $@
@@ -174,7 +169,7 @@ define create_llvm_prof
 	  $(1) \
 	  --out="$(DDIR)/$@" \
 	  --propeller_symorder="$(DDIR)/$(shell echo $@ | sed -Ee 's/cc_profile/ld_profile/')" \
-	  --logtostderr 2>&1 | tee "$(VARIANT_DIR)/create_llvm_prof$(2).log" \
+	  2>&1 | tee "$(VARIANT_DIR)/create_llvm_prof$(2).log" \
 	  || { rm -f "$(DDIR)/$@" "$(DDIR)/$(shell echo $@ | sed -Ee 's/cc_profile/ld_profile/')" ; exit 1 ; }
 	echo "Done: $@"
 	echo "Done: $(shell echo $@ | sed -Ee 's/cc_profile/ld_profile/')"
